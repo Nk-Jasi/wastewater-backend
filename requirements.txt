@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+geopandas
+shapely
+pandas
+openlocationcode
+python-multipart
+passlib[bcrypt]
+python-jose
