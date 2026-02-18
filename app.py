@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Depends
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, text
 import geopandas as gpd
 import pandas as pd
@@ -10,7 +11,21 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 import os
 
+# -------------------------------
+# App Setup
+# -------------------------------
 app = FastAPI(title="Wastewater GIS API v2")
+
+# -------------------------------
+# CORS Middleware for InfinityFree Frontend
+# -------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://portfolio23.infinityfreeapp.com"],  # InfinityFree frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # -------------------------------
 # Database connection (Render DB)
