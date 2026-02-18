@@ -38,10 +38,17 @@ def get_plus_code(geom):
     return olc.encode(geom.y, geom.x)
 
 # -------------------------------
-# UPLOAD DIRECTORY
+# Upload directory
 # -------------------------------
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# -------------------------------
+# Root route to confirm API is live
+# -------------------------------
+@app.get("/")
+def root():
+    return {"message": "Wastewater GIS API is live!"}
 
 # -------------------------------
 # Manholes endpoint
@@ -68,129 +75,7 @@ def get_pipes():
         raise HTTPException(status_code=500, detail=str(e))
 
 # -------------------------------
-# Maintenance endpoint
-# -------------------------------
-@app.get("/maintenance/{asset_type}/{asset_id}")
-def get_maintenance(asset_type: str, asset_id: str):
-    try:
-        query = text("""
-            SELECT *
-            FROM maintenance
-            WHERE asset_type = :asset_type
-              AND asset_id = :asset_id
-        """)
-        df = pd.read_sql(query, engine, params={"asset_type": asset_type.upper(), "asset_id": asset_id})
-        return df.to_dict(orient='records')
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# -------------------------------
-# Manhole radius search
-# -------------------------------
-@app.get("/manholes/search")
-def search_manholes(lat: float = Query(...), lon: float = Query(...), radius: float = Query(500)):
-    try:
-        point_wkt = Point(lon, lat).wkt
-        query = text("""
-            SELECT *, ST_AsText(geom) as geom_wkt
-            FROM waste_water_manhole
-            WHERE ST_DWithin(
-                geom::geography,
-                ST_GeomFromText(:point_wkt, 4326)::geography,
-                :radius
-            )
-        """)
-        gdf = gpd.read_postgis(query, engine, geom_col='geom', params={"point_wkt": point_wkt, "radius": radius})
-        gdf['plus_code'] = gdf['geom'].apply(get_plus_code)
-        return gdf.to_dict(orient='records')
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# -------------------------------
-# Favorites endpoints
-# -------------------------------
-@app.post("/favorites")
-def add_favorite(user_id: str, asset_type: str, asset_id: str):
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("""
-                INSERT INTO favorites(user_id, asset_type, asset_id)
-                VALUES(:user_id, :asset_type, :asset_id)
-                ON CONFLICT DO NOTHING
-            """), {"user_id": user_id, "asset_type": asset_type.upper(), "asset_id": asset_id})
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/favorites/{user_id}")
-def get_favorites(user_id: str):
-    try:
-        df = pd.read_sql(text("SELECT * FROM favorites WHERE user_id = :user_id"), engine, params={"user_id": user_id})
-        return df.to_dict(orient='records')
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# -------------------------------
-# Dashboard stats
-# -------------------------------
-@app.get("/dashboard/stats")
-def dashboard_stats():
-    try:
-        query = """
-            SELECT suburb, 
-                   COUNT(*) AS total_manholes, 
-                   SUM(CASE WHEN status='Needs Maintenance' THEN 1 ELSE 0 END) AS needs_maintenance
-            FROM waste_water_manhole
-            GROUP BY suburb
-        """
-        df = pd.read_sql(query, engine)
-        return df.to_dict(orient='records')
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# -------------------------------
-# Upload image
-# -------------------------------
-@app.post("/assets/{asset_id}/upload")
-def upload_image(asset_id: str, file: UploadFile = File(...)):
-    try:
-        filepath = os.path.join(UPLOAD_DIR, f"{asset_id}_{file.filename}")
-        with open(filepath, "wb") as f:
-            f.write(file.file.read())
-        with engine.connect() as conn:
-            conn.execute(text("""
-                UPDATE waste_water_manhole
-                SET image_path = :path
-                WHERE gid = :asset_id
-            """), {"path": filepath, "asset_id": asset_id})
-        return {"status": "success", "file_path": filepath}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# -------------------------------
-# Update manhole
-# -------------------------------
-@app.put("/manholes/{asset_id}")
-def update_manhole(asset_id: int, data: dict):
-    try:
-        query = text("""
-            UPDATE waste_water_manhole
-            SET status = :status,
-                notes = :notes
-            WHERE gid = :asset_id
-        """)
-        with engine.connect() as conn:
-            conn.execute(query, {
-                "status": data.get("status"),
-                "notes": data.get("notes"),
-                "asset_id": asset_id
-            })
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# -------------------------------
-# ALL DATA endpoint
+# All data combined endpoint
 # -------------------------------
 @app.get("/all-data")
 def get_all_data(user_id: str = None):
@@ -222,7 +107,7 @@ def get_all_data(user_id: str = None):
         result['favorites_error'] = str(e)
 
     try:
-        # Dashboard Stats
+        # Dashboard stats
         query_stats = """
             SELECT suburb, 
                    COUNT(*) AS total_manholes, 
@@ -236,4 +121,5 @@ def get_all_data(user_id: str = None):
         result['dashboard_stats_error'] = str(e)
 
     return result
+
 
